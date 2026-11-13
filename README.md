@@ -1,5 +1,7 @@
 # MacVolume
 
+<img src="Resources/AppIcon.png" width="96" alt="MacVolume icon">
+
 Keyboard volume control for audio interfaces that macOS can't adjust.
 
 Many USB audio interfaces and DACs (a Focusrite Scarlett, for example) and most HDMI / DisplayPort
@@ -153,6 +155,7 @@ changes, and after wake from sleep.
 | `Sources/MacVolume/AppDelegate.swift` | Menu bar UI, volume state, permissions |
 | `Sources/MacVolume/main.swift` | Entry point and `--probe` mode |
 | `build.sh` | Builds and signs the `.app` bundle |
+| `Scripts/make-icon.swift` | Regenerates `Resources/AppIcon.icns` (`swift Scripts/make-icon.swift`) |
 
 ### Compared with MonitorControl
 

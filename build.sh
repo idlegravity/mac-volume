@@ -8,9 +8,10 @@ BIN="$(swift build -c release --show-bin-path)/MacVolume"
 
 APP="build/MacVolume.app"
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/MacVolume"
 cp Info.plist "$APP/Contents/Info.plist"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 # Signing: a fixed identity keeps macOS privacy permissions across rebuilds.
 # Order: $SIGN_IDENTITY, then a keychain certificate named "MacVolume Signing"
@@ -31,6 +32,7 @@ if [[ "${1:-}" == "install" ]]; then
     done
     rm -rf /Applications/MacVolume.app
     cp -R "$APP" /Applications/MacVolume.app
-    open /Applications/MacVolume.app
+    # LaunchServices can briefly refuse to launch right after the old copy exits; retry once.
+    open /Applications/MacVolume.app || { sleep 1; open /Applications/MacVolume.app; }
     echo "Installed and launched /Applications/MacVolume.app"
 fi
