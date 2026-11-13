@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
     private var accessibilityTimer: Timer?
     private let bufferItem = NSMenuItem(title: "Buffer Size", action: nil, keyEquivalent: "")
+    private let positionItem = NSMenuItem(title: "Overlay Position", action: nil, keyEquivalent: "")
     /// 0 means "leave the system default".
     private static let bufferChoices: [Int] = [0, 64, 128, 256, 512, 1024]
 
@@ -32,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         volume = max(0, min(1, defaults.float(forKey: "volume")))
         muted = defaults.bool(forKey: "muted")
         engine.requestedBufferFrames = UInt32(max(0, defaults.integer(forKey: "bufferFrames")))
+        hud.position = HUDPosition(rawValue: defaults.string(forKey: "hudPosition") ?? "") ?? .native
 
         buildMenu()
         applyVolume(showHUD: false)
@@ -78,7 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         defaults.set(volume, forKey: "volume")
         defaults.set(muted, forKey: "muted")
         refreshUI()
-        if showHUD { hud.show(volume: volume, muted: muted) }
+        if showHUD { hud.show(volume: volume, muted: muted, deviceName: engine.deviceName) }
     }
 
     @objc private func sliderChanged() {
@@ -155,6 +157,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         bufferItem.submenu = bufferMenu
         menu.addItem(bufferItem)
 
+        let positionMenu = NSMenu()
+        positionMenu.autoenablesItems = false
+        for (index, position) in HUDPosition.allCases.enumerated() {
+            let item = NSMenuItem(title: position.title, action: #selector(selectOverlayPosition(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = index
+            positionMenu.addItem(item)
+        }
+        positionItem.submenu = positionMenu
+        menu.addItem(positionItem)
+
         loginItem.target = self
         menu.addItem(loginItem)
         menu.addItem(.separator())
@@ -211,6 +224,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let inUse = Int(engine.bufferFrames)
         bufferItem.title = active && inUse > 0 ? "Buffer Size: \(inUse) frames (\(milliseconds(inUse)))" : "Buffer Size"
 
+        for item in positionItem.submenu?.items ?? [] {
+            item.state = HUDPosition.allCases[item.tag] == hud.position ? .on : .off
+        }
+
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
     }
 
@@ -218,6 +235,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         defaults.set(sender.tag, forKey: "bufferFrames")
         engine.requestedBufferFrames = UInt32(sender.tag)
         engine.rebuild() // brief dropout while the audio path restarts
+    }
+
+    @objc private func selectOverlayPosition(_ sender: NSMenuItem) {
+        let position = HUDPosition.allCases[sender.tag]
+        hud.position = position
+        defaults.set(position.rawValue, forKey: "hudPosition")
+        refreshUI()
+        // Show it straight away so the new position is visible.
+        hud.show(volume: volume, muted: muted, deviceName: engine.deviceName)
     }
 
     @objc private func toggleLaunchAtLogin() {

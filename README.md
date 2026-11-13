@@ -9,7 +9,7 @@ monitors don't expose a volume control to macOS. The volume keys do nothing and 
 greyed out. MacVolume is a small menu bar app that gives those devices a software volume, driven by the
 normal volume keys.
 
-- Volume up, down and mute keys work, with an on-screen level indicator
+- Volume up, down and mute keys work, with an on-screen overlay styled like the native one
 - 16 steps like macOS; hold Shift+Option for quarter steps
 - Menu bar icon with a slider, mute, and a Launch at Login toggle
 - Remembers the level and mute state between launches
@@ -107,8 +107,20 @@ SIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./build.sh install
 | Set a level directly | Slider in the menu bar menu |
 | Start at login | Launch at Login in the menu |
 | Reduce latency | Buffer Size in the menu |
+| Move the volume overlay | Overlay Position in the menu |
 
 Volume starts at 100% the first time, so nothing changes until you press a key.
+
+### Overlay position
+
+The on-screen volume overlay is modelled on the macOS 26 one: a glass pill with the device name, a
+level track and step dots. Overlay Position chooses where it appears:
+
+- **Native (Top Right):** under the right end of the menu bar, where macOS 26 shows its own.
+- **Classic (Bottom Center):** bottom centre of the screen, where macOS showed it before.
+
+It appears on whichever screen the pointer is on. `MacVolume --hud-demo` (add `--classic` for the
+bottom position) shows the overlay for a few seconds without touching audio.
 
 ### Buffer size
 
