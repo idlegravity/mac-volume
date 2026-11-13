@@ -45,8 +45,51 @@ On first launch macOS asks for two permissions:
 Grant Accessibility in System Settings → Privacy & Security → Accessibility. The keys start working a
 couple of seconds later; no relaunch is needed.
 
-The app is ad-hoc signed, so macOS ties these permissions to the exact build. After rebuilding from
-changed source you will usually be asked again. To avoid that, sign with a real identity:
+### Keeping permissions across rebuilds
+
+By default the app is ad-hoc signed, so macOS ties these permissions to the exact build. After
+rebuilding from changed source the old grants stop matching: the volume keys stop working even though
+System Settings still shows MacVolume as enabled. Clear the stale entry and relaunch to be asked again:
+
+```bash
+tccutil reset Accessibility com.local.MacVolume
+```
+
+To avoid this, sign with a fixed identity. macOS then identifies the app by its certificate instead
+of by each build's exact contents. A free self-signed certificate is enough.
+
+**1. Create a self-signed certificate**
+
+1. Open Keychain Access.
+2. Choose Keychain Access → Certificate Assistant → Create a Certificate…
+3. Fill in:
+   - Name: `MacVolume Signing` (exactly this; the build script looks for it)
+   - Identity Type: Self-Signed Root
+   - Certificate Type: Code Signing
+4. Click Create and confirm the self-signed warning.
+
+**2. Rebuild with it**
+
+```bash
+./build.sh install
+```
+
+The first time, macOS asks whether `codesign` may use the key. Enter your login password and choose
+Always Allow. The build output should end with `signed with: MacVolume Signing` instead of `ad-hoc`.
+
+**3. Grant permissions one last time**
+
+Switching from the ad-hoc signature to the certificate invalidates the existing grants once more.
+
+```bash
+tccutil reset Accessibility com.local.MacVolume
+pkill -x MacVolume; open /Applications/MacVolume.app
+```
+
+Allow System Audio Recording and Accessibility when asked. Later rebuilds signed with the same
+certificate keep both permissions.
+
+To use a different identity, such as an Apple Development certificate:
 
 ```bash
 SIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./build.sh install
@@ -61,8 +104,28 @@ SIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./build.sh install
 | Mute | Mute key, or the menu |
 | Set a level directly | Slider in the menu bar menu |
 | Start at login | Launch at Login in the menu |
+| Reduce latency | Buffer Size in the menu |
 
 Volume starts at 100% the first time, so nothing changes until you press a key.
+
+### Buffer size
+
+Audio makes one extra trip through MacVolume, which adds about one IO buffer of latency. The Buffer
+Size submenu sets how big that buffer is; each option shows the latency it adds at the device's
+current sample rate.
+
+| Setting | Added latency at 48 kHz |
+| --- | --- |
+| System Default (usually 512 frames) | 10.7 ms |
+| 64 frames | 1.3 ms |
+| 128 frames | 2.7 ms |
+| 256 frames | 5.3 ms |
+| 512 frames | 10.7 ms |
+| 1024 frames | 21.3 ms |
+
+Smaller buffers use a little more CPU and are more likely to crackle if the Mac is under heavy load.
+If you hear dropouts, pick a larger size. Changing the setting restarts the audio path, which causes a
+brief dropout. A size the device doesn't support is clamped to the nearest one it does.
 
 ## How it works
 
@@ -100,7 +163,8 @@ scale the audio in software instead.
 
 ## Limitations
 
-- **Latency:** audio passes through the app, which adds roughly one IO buffer (about 10 ms).
+- **Latency:** audio passes through the app, which adds roughly one IO buffer (about 10 ms by
+  default; see [Buffer size](#buffer-size) to reduce it).
 - **Digital attenuation:** lowering the level in software gives up a little resolution. For best
   results keep the interface's own knob at a sensible level and use MacVolume for everyday changes.
 - **Full level if the app stops:** if MacVolume quits or crashes, audio returns to 100% immediately.
@@ -118,7 +182,8 @@ scale the audio in software instead.
 - **Menu says "using system volume":** the current output device has its own volume control, so
   MacVolume is deliberately staying out of the way.
 - **Checking the audio setup:** `/Applications/MacVolume.app/Contents/MacOS/MacVolume --probe` sets up
-  the tap and aggregate device, prints what it found, and exits.
+  the tap and aggregate device, prints what it found, and exits. Add `--buffer 128` to try a
+  buffer size.
 - **A refused microphone request in Console:** if the device also has inputs, macOS logs a refused
   microphone request for MacVolume. This is harmless; the app never reads the device's inputs.
 

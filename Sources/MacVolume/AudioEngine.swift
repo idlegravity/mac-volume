@@ -117,6 +117,13 @@ final class AudioEngine {
     private(set) var lastError: String?
     var onStateChange: (() -> Void)?
 
+    /// IO buffer size to request, in frames. 0 leaves the system default. Takes effect on the next rebuild.
+    var requestedBufferFrames: UInt32 = 0
+    /// IO buffer size actually in use while active.
+    private(set) var bufferFrames: UInt32 = 0
+    /// Sample rate of the output device, as of the last rebuild.
+    private(set) var sampleRate: Float64 = 0
+
     // Shared with the realtime IO thread; plain float reads/writes are fine here.
     private let targetGain: UnsafeMutablePointer<Float>
     private let currentGain: UnsafeMutablePointer<Float>
@@ -168,6 +175,7 @@ final class AudioEngine {
             return
         }
         deviceName = CA.string(dev, kAudioObjectPropertyName) ?? "Unknown device"
+        sampleRate = CA.get(dev, kAudioDevicePropertyNominalSampleRate, initial: Float64(0)) ?? 0
 
         if CA.hasVolumeControl(dev) {
             log("\(deviceName) has its own volume control; staying out of the way")
@@ -246,6 +254,20 @@ final class AudioEngine {
         }
         let tapOffset = deviceInputs
 
+        // Optional smaller (or larger) IO buffer: fewer frames means less added latency.
+        var bufferAddr = CA.address(kAudioDevicePropertyBufferFrameSize)
+        if requestedBufferFrames > 0 {
+            var frames = requestedBufferFrames
+            if let range = CA.get(newAggregate, kAudioDevicePropertyBufferFrameSizeRange, initial: AudioValueRange()) {
+                frames = UInt32(max(range.mMinimum, min(range.mMaximum, Float64(frames))))
+            }
+            let sizeErr = AudioObjectSetPropertyData(
+                newAggregate, &bufferAddr, 0, nil, UInt32(MemoryLayout<UInt32>.size), &frames)
+            if sizeErr != noErr { log("Could not set buffer size to \(frames) frames (OSStatus \(sizeErr)); using default") }
+        }
+        bufferFrames = CA.get(newAggregate, kAudioDevicePropertyBufferFrameSize, initial: UInt32(0)) ?? 0
+        log("IO buffer: \(bufferFrames) frames (requested \(requestedBufferFrames == 0 ? "default" : "\(requestedBufferFrames)"))")
+
         // 3. IO: tap -> gain -> device.
         let target = targetGain
         let current = currentGain
@@ -320,6 +342,7 @@ final class AudioEngine {
 
     func teardown() {
         isActive = false
+        bufferFrames = 0
         if let listener = sampleRateListener, device != kAudioObjectUnknown {
             var rateAddr = CA.address(kAudioDevicePropertyNominalSampleRate)
             AudioObjectRemovePropertyListenerBlock(device, &rateAddr, .main, listener)

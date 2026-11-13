@@ -1,8 +1,11 @@
 import AppKit
 
-// `MacVolume --probe` sets up the audio path, prints what it found, and exits.
+// `MacVolume --probe [--buffer N]` sets up the audio path, prints what it found, and exits.
 if CommandLine.arguments.contains("--probe") {
     let engine = AudioEngine()
+    if let flag = CommandLine.arguments.firstIndex(of: "--buffer"), flag + 1 < CommandLine.arguments.count {
+        engine.requestedBufferFrames = UInt32(CommandLine.arguments[flag + 1]) ?? 0
+    }
     engine.rebuild()
     log("active=\(engine.isActive) device=\(engine.deviceName) error=\(engine.lastError ?? "none")")
     engine.teardown()

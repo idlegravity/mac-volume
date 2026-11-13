@@ -18,6 +18,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         title: "Grant Accessibility Access for Volume Keys…", action: #selector(openAccessibilitySettings), keyEquivalent: "")
     private let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
     private var accessibilityTimer: Timer?
+    private let bufferItem = NSMenuItem(title: "Buffer Size", action: nil, keyEquivalent: "")
+    /// 0 means "leave the system default".
+    private static let bufferChoices: [Int] = [0, 64, 128, 256, 512, 1024]
 
     private var volume: Float = 1
     private var muted = false
@@ -25,9 +28,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        defaults.register(defaults: ["volume": 1.0, "muted": false])
+        defaults.register(defaults: ["volume": 1.0, "muted": false, "bufferFrames": 0])
         volume = max(0, min(1, defaults.float(forKey: "volume")))
         muted = defaults.bool(forKey: "muted")
+        engine.requestedBufferFrames = UInt32(max(0, defaults.integer(forKey: "bufferFrames")))
 
         buildMenu()
         applyVolume(showHUD: false)
@@ -139,6 +143,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         accessibilityItem.target = self
         menu.addItem(accessibilityItem)
+
+        let bufferMenu = NSMenu()
+        bufferMenu.autoenablesItems = false
+        for frames in Self.bufferChoices {
+            let item = NSMenuItem(title: "", action: #selector(selectBufferSize(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = frames
+            bufferMenu.addItem(item)
+        }
+        bufferItem.submenu = bufferMenu
+        menu.addItem(bufferItem)
+
         loginItem.target = self
         menu.addItem(loginItem)
         menu.addItem(.separator())
@@ -174,7 +190,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         muteItem.state = muted ? .on : .off
         muteItem.isEnabled = active
         accessibilityItem.isHidden = keys.isRunning
+
+        let selected = Int(engine.requestedBufferFrames)
+        let rate = engine.sampleRate
+        func milliseconds(_ frames: Int) -> String {
+            rate > 0 ? String(format: "%.1f ms", Double(frames) / rate * 1000) : ""
+        }
+        for item in bufferItem.submenu?.items ?? [] {
+            if item.tag == 0 {
+                // Only when the default is selected do we know what the default actually is.
+                let actual = Int(engine.bufferFrames)
+                item.title = selected == 0 && actual > 0
+                    ? "System Default (\(actual) frames, \(milliseconds(actual)))"
+                    : "System Default"
+            } else {
+                item.title = rate > 0 ? "\(item.tag) frames (\(milliseconds(item.tag)))" : "\(item.tag) frames"
+            }
+            item.state = item.tag == selected ? .on : .off
+        }
+        let inUse = Int(engine.bufferFrames)
+        bufferItem.title = active && inUse > 0 ? "Buffer Size: \(inUse) frames (\(milliseconds(inUse)))" : "Buffer Size"
+
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+    }
+
+    @objc private func selectBufferSize(_ sender: NSMenuItem) {
+        defaults.set(sender.tag, forKey: "bufferFrames")
+        engine.requestedBufferFrames = UInt32(sender.tag)
+        engine.rebuild() // brief dropout while the audio path restarts
     }
 
     @objc private func toggleLaunchAtLogin() {
